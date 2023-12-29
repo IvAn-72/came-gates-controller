@@ -1,0 +1,143 @@
+esphome:
+  name: came-gates-controller
+  comment: "Управление воротами Came"
+esp8266:
+  board: nodemcuv2
+logger:
+  baud_rate: 0
+#  level: DEBUG
+
+# Enable Home Assistant API
+api:
+ota:
+wifi:
+  ssid: !secret wifi_ssid
+  password: !secret wifi_password
+  # Enable fallback hotspot (captive portal) in case wifi connection fails
+  ap:
+    ssid: "esp"
+    password: !secret wifi_password
+  reboot_timeout: 45s
+    
+# Датчик температуры
+dallas:
+  pin: 
+    number: D7 
+  update_interval: 30s
+
+sensor:
+  - platform: uptime
+    name: Uptime Sensor
+  - platform: dallas
+    name: "Температура на чердаке"  # Название датчика температуры
+    id: "temperature_attic"  
+    address:   #подставляем свой адрес
+  - platform: dallas
+    name: "Температура на улице"  # Название датчика температуры
+    id: "temperature_out"
+    address:    #подставляем свой адрес
+
+status_led:
+  pin: GPIO2
+  
+web_server:
+  port: 80  
+
+binary_sensor:
+  - platform: gpio
+    id: is_gate_closed
+    name: "Closed Sensor"
+    internal: False 
+    pin: 
+      number: D5
+      inverted: False
+    filters:
+      - delayed_on_off: 80ms
+    on_release:
+      then:
+        - if:
+            condition:
+              binary_sensor.is_off: "is_gate_opened"
+            then:
+              cover.template.publish: 
+                id: gate
+                current_operation: !lambda 'return COVER_OPERATION_OPENING;'
+    on_press:
+      then:
+        - if:
+            condition:
+              binary_sensor.is_off: "is_gate_opened"
+            then:
+              cover.template.publish: 
+                id: gate
+                current_operation: !lambda 'return COVER_OPERATION_IDLE;' 
+
+  - platform: gpio
+    id: is_gate_opened
+    name: "Open Sensor"
+    internal: False 
+    pin: 
+      number: D6
+      inverted: False
+    filters:
+      - delayed_on_off: 80ms
+    on_release:
+      then:
+        - if:
+            condition:
+              binary_sensor.is_off: "is_gate_closed"
+            then:
+              cover.template.publish: 
+                id: gate
+                current_operation: !lambda 'return COVER_OPERATION_CLOSING;'      
+    on_press:
+      then:
+        - if:
+            condition:
+              binary_sensor.is_off: "is_gate_closed"
+            then:
+              cover.template.publish: 
+                id: gate
+                current_operation: !lambda 'return COVER_OPERATION_IDLE;' 
+
+switch:
+  - platform: gpio
+    pin: D1
+#    name: "Gate Switch"
+    internal: True
+    icon: "mdi:gate"
+    id: gate_sw1
+    on_turn_on:
+      - delay: 500ms
+      - switch.turn_off: gate_sw1
+  - platform: gpio
+    pin: D2
+#    name: "Gate Switch"
+    internal: True
+    icon: "mdi:gate"
+    id: gate_sw2
+    on_turn_on:
+      - delay: 500ms
+      - switch.turn_off: gate_sw2
+
+cover:
+  - platform: template
+    id: gate
+    name: "Gate"
+    icon: "mdi:gate"
+    device_class: gate
+    lambda: |-
+      if ((id(is_gate_closed).state) && (!id(is_gate_opened).state)) {
+        return COVER_CLOSED;
+      } 
+      else {
+        return COVER_OPEN; 
+      }
+    open_action:
+      - switch.turn_on: gate_sw1
+    close_action:
+      - switch.turn_on: gate_sw2
+#    stop_action:
+#      - switch.turn_on: gate_switch
+    optimistic: false
+    assumed_state: false
